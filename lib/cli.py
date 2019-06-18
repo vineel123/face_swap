@@ -1022,6 +1022,183 @@ class TrainArgs(FaceSwapArgs):
         return argument_list
 
 
+#---------------------------------------------------------------#
+class MulTrainArgs(FaceSwapArgs):
+    @staticmethod
+    def get_argument_list():
+        argument_list = list()
+        argument_list.append({"opts": ("-i", "--input"),
+                              "action": DirFullPaths,
+                              "dest": "input_a",
+                              "nargs":"+",
+                              "required": True,
+                              "help": "Input directory. A directory containing training images "
+                                      "for face A."})
+        argument_list.append({"opts": ("-ila", "--alignments-i"),
+                              "action": FileFullPaths,
+                              "nargs" : "*",
+                              "filetypes": 'alignments',
+                              "type": str,
+                              "dest": "alignments_path_a",
+                              "default": None,
+                              "help": "Path to alignments file for training set A. Only required "
+                                      "if you are using a masked model or warp-to-landmarks is "
+                                      "enabled. Defaults to <input-A>/alignments.json if not "
+                                      "provided."})
+        argument_list.append({"opts": ("-m", "--model-dir"),
+                              "action": DirFullPaths,
+                              "dest": "model_dir",
+                              "required": True,
+                              "help": "Model directory. This is where the training data will be "
+                                      "stored."})
+        argument_list.append({"opts": ("-t", "--trainer"),
+                              "action": Radio,
+                              "type": str.lower,
+                              "choices": PluginLoader.get_available_models(),
+                              "default": PluginLoader.get_default_model(),
+                              "help": "R|Select which trainer to use. Trainers can be"
+                                      "configured from the edit menu or the config folder."
+                                      "\nL|original: The original model created by /u/deepfakes."
+                                      "\nL|dfaker: 64px in/128px out model from dfaker. "
+                                      "Enable 'warp-to-landmarks' for full dfaker method."
+                                      "\nL|dfl-h128. 128px in/out model from deepfacelab"
+                                      "\nL|iae: A model that uses intermediate layers to try to "
+                                      "get better details"
+                                      "\nL|lightweight: A lightweight model for low-end cards. "
+                                      "Don't expect great results. Can train as low as 1.6GB "
+                                      "with batch size 8."
+                                      "\nL|realface: Customizable in/out resolution model "
+                                      "from andenixa. The autoencoders are unbalanced so B>A "
+                                      "swaps won't work so well. Very configurable."
+                                      "\nL|unbalanced: 128px in/out model from andenixa. The "
+                                      "autoencoders are unbalanced so B>A swaps won't work so "
+                                      "well. Very configurable."
+                                      "\nL|villain: 128px in/out model from villainguy. Very "
+                                      "resource hungry (11GB for batchsize 16). Good for "
+                                      "details, but more susceptible to color differences."})
+        argument_list.append({"opts": ("-s", "--save-interval"),
+                              "type": int,
+                              "action": Slider,
+                              "min_max": (10, 1000),
+                              "rounding": 10,
+                              "dest": "save_interval",
+                              "default": 100,
+                              "help": "Sets the number of iterations before saving the model"})
+        argument_list.append({"opts": ("-ss", "--snapshot-interval"),
+                              "type": int,
+                              "action": Slider,
+                              "min_max": (0, 100000),
+                              "rounding": 5000,
+                              "dest": "snapshot_interval",
+                              "default": 25000,
+                              "help": "Sets the number of iterations before saving a backup "
+                                      "snapshot of the model in it's current state. Set to 0 for "
+                                      "off."})
+        argument_list.append({"opts": ("-bs", "--batch-size"),
+                              "type": int,
+                              "action": Slider,
+                              "min_max": (2, 256),
+                              "rounding": 2,
+                              "dest": "batch_size",
+                              "default": 64,
+                              "help": "Batch size, as a power of 2 (64, 128, 256, etc)"})
+        argument_list.append({"opts": ("-it", "--iterations"),
+                              "type": int,
+                              "action": Slider,
+                              "min_max": (0, 5000000),
+                              "rounding": 20000,
+                              "default": 1000000,
+                              "help": "Length of training in iterations."})
+        argument_list.append({"opts": ("-g", "--gpus"),
+                              "type": int,
+                              "action": Slider,
+                              "min_max": (1, 10),
+                              "rounding": 1,
+                              "default": 1,
+                              "help": "Number of GPUs to use for training"})
+        argument_list.append({"opts": ("-ps", "--preview-scale"),
+                              "type": int,
+                              "action": Slider,
+                              "dest": "preview_scale",
+                              "min_max": (25, 200),
+                              "rounding": 25,
+                              "default": 50,
+                              "help": "Percentage amount to scale the preview by."})
+        argument_list.append({"opts": ("-p", "--preview"),
+                              "action": "store_true",
+                              "dest": "preview",
+                              "default": False,
+                              "help": "Show training preview output. in a separate window."})
+        argument_list.append({"opts": ("-w", "--write-image"),
+                              "action": "store_true",
+                              "dest": "write_image",
+                              "default": False,
+                              "help": "Writes the training result to a file. The image will be "
+                                      "stored in the root of your FaceSwap folder."})
+        argument_list.append({"opts": ("-ag", "--allow-growth"),
+                              "action": "store_true",
+                              "dest": "allow_growth",
+                              "default": False,
+                              "help": "Sets allow_growth option of Tensorflow "
+                                      "to spare memory on some configs"})
+        argument_list.append({"opts": ("-nl", "--no-logs"),
+                              "action": "store_true",
+                              "dest": "no_logs",
+                              "default": False,
+                              "help": "Disables TensorBoard logging. NB: Disabling logs means "
+                                      "that you will not be able to use the graph or analysis "
+                                      "for this session in the GUI."})
+        argument_list.append({"opts": ("-pp", "--ping-pong"),
+                              "action": "store_true",
+                              "dest": "pingpong",
+                              "default": False,
+                              "help": "Enable ping pong training. Trains one side at a time, "
+                                      "switching sides at each save iteration. Training will take "
+                                      "2 to 4 times longer, with about a 30%%-50%% reduction in "
+                                      "VRAM useage. NB: Preview won't show until both sides have "
+                                      "been trained once."})
+        argument_list.append({"opts": ("-msg", "--memory-saving-gradients"),
+                              "action": "store_true",
+                              "dest": "memory_saving_gradients",
+                              "default": False,
+                              "help": "Trades off VRAM useage against computation time. Can fit "
+                                      "larger models into memory at a cost of slower training "
+                                      "speed. 50%%-150%% batch size increase for 20%%-50%% longer "
+                                      "training time. NB: Launch time will be significantly "
+                                      "delayed. Switching sides using ping-pong training will "
+                                      "take longer."})
+        argument_list.append({"opts": ("-wl", "--warp-to-landmarks"),
+                              "action": "store_true",
+                              "dest": "warp_to_landmarks",
+                              "default": False,
+                              "help": "Warps training faces to closely matched Landmarks from the "
+                                      "opposite face-set rather than randomly warping the face. "
+                                      "This is the 'dfaker' way of doing warping. Alignments "
+                                      "files for both sets of faces must be provided if using "
+                                      "this option."})
+        argument_list.append({"opts": ("-nf", "--no-flip"),
+                              "action": "store_true",
+                              "dest": "no_flip",
+                              "default": False,
+                              "help": "To effectively learn, a random set of images are flipped "
+                                      "horizontally. Sometimes it is desirable for this not to "
+                                      "occur. Generally this should be left off except for "
+                                      "during 'fit training'."})
+        argument_list.append({"opts": ("-ac", "--augment-color"),
+                              "action": "store_true",
+                              "dest": "augment_color",
+                              "default": False,
+                              "help": "Perform color augmentation on training images. This has "
+                                      "a 50%% chance of performing Contrast Limited Adaptive "
+                                      "Histogram Equilization on the image. Then it randomly "
+                                      "shifts the color balance +/- 8%% and the lighting +/- 30%% "
+                                      "on each face fed to the model. Should help make the model "
+                                      "less susceptible to color differences between the A and B "
+                                      "set, but may increase training time."})
+        return argument_list
+
+
+
 class GuiArgs(FaceSwapArgs):
     """ Class to parse the command line arguments for training """
 

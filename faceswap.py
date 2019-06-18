@@ -25,6 +25,10 @@ if __name__ == "__main__":
     TRAIN = cli.TrainArgs(SUBPARSER,
                           "train",
                           "This command trains the model for the two faces A and B")
+
+    #--------------------------------------------creating-------------------------------------------------#
+    MULTRAIN = cli.MulTrainArgs(SUBPARSER , "mul_train" , "This command trains a model for multiple faces")
+
     CONVERT = cli.ConvertArgs(SUBPARSER,
                               "convert",
                               "Convert a source image to a new one with the face swapped")
