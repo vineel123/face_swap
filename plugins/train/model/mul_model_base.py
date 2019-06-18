@@ -65,7 +65,9 @@ class ModelBase():
         self.predict = predict
         self.model_dir = model_dir
         self.gpus = gpus
+
         self.configfile = configfile
+        
         self.blocks = NNBlocks(use_subpixel=self.config["subpixel_upscaling"],
                                use_icnr_init=self.config["icnr_init"],
                                use_reflect_padding=self.config["reflect_padding"])
@@ -156,7 +158,7 @@ class ModelBase():
         from lib.model import memory_saving_gradients
         K.__dict__["gradients"] = memory_saving_gradients.gradients_memory
 
-    #
+    #un-checked have to see if it interfers training 
     def set_training_data(self):
         """ Override to set model specific training data.
 
@@ -378,6 +380,7 @@ class ModelBase():
 
     #changed
     #returns  dic with same mappings , doeas not affect training but may affect convert
+    #does care about swap
     def map_models(self, swapped):
         """ Map the models for A/B side for swapping """
         logger.debug("Map models: (swapped: %s)", swapped)

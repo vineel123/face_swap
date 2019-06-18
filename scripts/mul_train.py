@@ -63,6 +63,7 @@ class Mul_Train():
         return images
 #-----------------------------------------------------------------------------
     def process(self):
+        model = self.load_model()
         print(self.args)
 
     def start_thread(self):
@@ -142,21 +143,24 @@ class Mul_Train():
     @property
     def image_size(self):
         """ Get the training set image size for storing in model data """
-        image = cv2_read_img(self.images["a"][0], raise_error=True)
+        image = cv2_read_img(self.images["1"][0], raise_error=True)
         size = image.shape[0]
         logger.debug("Training image size: %s", size)
         return size
 
+    #changed
     @property
     def alignments_paths(self):
         """ Set the alignments path to input dirs if not provided """
         alignments_paths = dict()
-        for side in ("a", "b"):
-            alignments_path = getattr(self.args, "alignments_path_{}".format(side))
+        for side in range(len(self.args.input_a)):
+            alignments_path = None
+            if self.args.alignments_path_a:
+                alignments_path = self.args.alignments_path_a[side]
             if not alignments_path:
-                image_path = getattr(self.args, "input_{}".format(side))
+                image_path = self.args.input_a[side]
                 alignments_path = os.path.join(image_path, "alignments.json")
-            alignments_paths[side] = alignments_path
+            alignments_paths[str(side)] = alignments_path
         logger.debug("Alignments paths: %s", alignments_paths)
         return alignments_paths
 
