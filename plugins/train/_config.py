@@ -27,6 +27,7 @@ class Config(FaceswapConfig):
         current_dir = os.path.dirname(__file__)
         for dirpath, _, filenames in os.walk(current_dir):
             default_files = [fname for fname in filenames if fname.endswith("_defaults.py")]
+            #print(filenames)
             if not default_files:
                 continue
             base_path = os.path.dirname(os.path.realpath(sys.argv[0]))

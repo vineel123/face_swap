@@ -7,7 +7,7 @@ from keras.layers import Conv2D, Dense, Flatten, Input, Reshape
 
 from keras.models import Model as KerasModel
 
-from ._base import ModelBase, logger
+from .mul_model_base import ModelBase, logger
 
 
 class Model(ModelBase):
@@ -28,8 +28,8 @@ class Model(ModelBase):
     def add_networks(self):
         """ Add the original model weights """
         logger.debug("Adding networks")
-        self.add_network("decoder", "a", self.decoder())
-        self.add_network("decoder", "b", self.decoder())
+        for i in range(self.num_of_sides):
+            self.add_network("decoder", str(i), self.decoder())
         self.add_network("encoder", None, self.encoder())
         logger.debug("Added networks")
 
@@ -41,12 +41,12 @@ class Model(ModelBase):
             mask_shape = (self.input_shape[:2] + (1, ))
             inputs.append(Input(shape=mask_shape, name="mask"))
 
-        for side in ("a", "b"):
-            logger.debug("Adding Autoencoder. Side: %s", side)
+        for side in range(self.num_of_sides):
+            logger.debug("Adding Autoencoder. Side: %s", str(side))
             decoder = self.networks["decoder_{}".format(side)].network
             output = decoder(self.networks["encoder"].network(inputs[0]))
             autoencoder = KerasModel(inputs, output)
-            self.add_predictor(side, autoencoder)
+            self.add_predictor(str(side), autoencoder)
         logger.debug("Initialized model")
 
     def encoder(self):

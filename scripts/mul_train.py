@@ -36,8 +36,9 @@ class Mul_Train():
         self.lock = Lock()
         self.trainer_name = self.args.trainer
         logger.debug("Initialized %s", self.__class__.__name__)
-
-#------------------------------------------------------------------------------
+    
+    #changed
+    #returns dict , key : side , value : list of paths 
     def get_images(self):
         """ Check the image dirs exist, contain images and return the image
         objects """
@@ -61,11 +62,25 @@ class Mul_Train():
         logger.debug("Got image paths: %s", [(key, str(len(val)) + " images")
                                              for key, val in images.items()])
         return images
-#-----------------------------------------------------------------------------
-    def process(self):
-        model = self.load_model()
-        print(self.args)
 
+
+    #verified
+    #calls start_thread and monitor 
+    def process(self):
+        """ Call the training process object """
+        logger.debug("Starting Training Process")
+        logger.info("Training data directory: %s", self.args.model_dir)
+        set_system_verbosity(self.args.loglevel)
+        thread = self.start_thread()
+        # queue_manager.debug_monitor(1)
+
+        err = self.monitor(thread)
+
+        self.end_thread(thread, err)
+        logger.debug("Completed Training Process")
+
+    #verified
+    #creates thread with target self.training
     def start_thread(self):
         """ Put the training process in a thread so we can keep control """
         logger.debug("Launching Trainer thread")
@@ -74,6 +89,8 @@ class Mul_Train():
         logger.debug("Launched Trainer thread")
         return thread
 
+    #verified
+    #prints at the time of ending
     def end_thread(self, thread, err):
         """ On termination output message and join thread back to main """
         logger.debug("Ending Training thread")
@@ -92,6 +109,8 @@ class Mul_Train():
         sys.stdout.flush()
         logger.debug("Ended Training thread")
 
+    #verified
+    #calls load_model , load_trainer , self.run_training_cycle
     def training(self):
         """ The training process to be run inside a thread """
         try:
@@ -116,6 +135,8 @@ class Mul_Train():
         except Exception as err:
             raise err
 
+    #changed : added num_of_sides
+    #load and returns the model
     def load_model(self):
         """ Load the model requested for training """
         logger.debug("Loading Model")
@@ -140,6 +161,8 @@ class Mul_Train():
         logger.debug("Loaded Model")
         return model
 
+    #verified
+    #return size of first image  
     @property
     def image_size(self):
         """ Get the training set image size for storing in model data """
@@ -149,6 +172,7 @@ class Mul_Train():
         return size
 
     #changed
+    # Set the alignments path to input dirs if not provided
     @property
     def alignments_paths(self):
         """ Set the alignments path to input dirs if not provided """
@@ -164,6 +188,8 @@ class Mul_Train():
         logger.debug("Alignments paths: %s", alignments_paths)
         return alignments_paths
 
+    #verified
+    #loads and returns trainer
     def load_trainer(self, model):
         """ Load the trainer requested for training """
         logger.debug("Loading Trainer")
@@ -174,6 +200,9 @@ class Mul_Train():
         logger.debug("Loaded Trainer")
         return trainer
 
+    #verified
+    #self.show is responsible of adding a buffer image and monitor gives preview
+    #train_one_steps does the training
     def run_training_cycle(self, model, trainer):
         """ Perform the training cycle """
         logger.debug("Running Training Cycle")
@@ -210,6 +239,9 @@ class Mul_Train():
         trainer.clear_tensorboard()
         self.stop = True
 
+    #verified
+    #checks the key presses
+    #shows preview
     def monitor(self, thread):
         """ Monitor the console, and generate + monitor preview if requested """
         is_preview = self.args.preview
@@ -285,6 +317,8 @@ class Mul_Train():
         set_session(tf.Session(config=config))
         logger.debug("Set Tensorflow 'allow_growth' option")
 
+    #verified
+    #loads imag into the preview buffer
     def show(self, image, name=""):
         """ Generate the preview and write preview file output """
         logger.trace("Updating preview: (name: %s)", name)

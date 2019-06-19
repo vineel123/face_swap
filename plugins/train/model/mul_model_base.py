@@ -46,12 +46,11 @@ class ModelBase():
                  preview_scale=100,
                  input_shape=None,
                  encoder_dim=None,
-                 trainer="original",
+                 trainer="mul_train",
                  pingpong=False,
                  memory_saving_gradients=False,
                  predict=False,
-                 num_of_sides = 3
-                 ):
+                 num_of_sides = 3):
         logger.debug("Initializing ModelBase (%s): (model_dir: '%s', gpus: %s, configfile: %s, "
                      "no_logs: %s, warp_to_landmarks: %s, augment_color: %s, no_flip: %s, "
                      "training_image_size, %s, alignments_paths: %s, preview_scale: %s, "
@@ -62,19 +61,17 @@ class ModelBase():
                      alignments_paths, preview_scale, input_shape, encoder_dim, trainer, pingpong,
                      memory_saving_gradients, predict)
 
+        self.num_of_sides = num_of_sides
         self.predict = predict
         self.model_dir = model_dir
         self.gpus = gpus
-
         self.configfile = configfile
-        
         self.blocks = NNBlocks(use_subpixel=self.config["subpixel_upscaling"],
                                use_icnr_init=self.config["icnr_init"],
                                use_reflect_padding=self.config["reflect_padding"])
         self.input_shape = input_shape
         self.output_shape = None  # set after model is compiled
         self.encoder_dim = encoder_dim
-        self.num_of_sides = num_of_sides
         self.trainer = trainer
 
         self.state = State(self.model_dir,
@@ -104,6 +101,7 @@ class ModelBase():
         self.build()
         self.set_training_data()
         logger.debug("Initialized ModelBase (%s)", self.__class__.__name__)
+
 
     #doesnot affect
     @property
@@ -338,11 +336,13 @@ class ModelBase():
     #returns a list of loss functions for each side , i am ignoring mask and dissim loss
     def loss_function(self, mask, side, initialize):
         """ Set the loss function
-            Side is input so we only log once """   
+            Side is input so we only log once """
+        if side=='1':
+            logger.verbose("Loss function for the model is mean_absolute_error")
         loss_func = losses.mean_absolute_error
         if mask and self.config.get("penalized_mask_loss", False):
             loss_mask = mask[0]
-            if side == "a" and not self.predict and initialize:
+            if side == "1" and not self.predict and initialize:
                 logger.verbose("Penalizing mask for Loss")
             loss_func = PenalizedLoss(loss_mask, loss_func)
         return loss_func
@@ -352,7 +352,7 @@ class ModelBase():
     def mask_loss_function(self, side, initialize):
         """ Set the mask loss function
             Side is input so we only log once """
-        if side == "a" and not self.predict and initialize:
+        if side == "1" and not self.predict and initialize:
             logger.verbose("Using Mean Squared Error Loss for mask")
         mask_loss_func = losses.mean_squared_error
         return mask_loss_func
@@ -384,7 +384,7 @@ class ModelBase():
     def map_models(self, swapped):
         """ Map the models for A/B side for swapping """
         logger.debug("Map models: (swapped: %s)", swapped)
-        models_map = {str(i) for i in range(self.num_of_sides)}
+        models_map = {str(i):dict() for i in range(self.num_of_sides)}
         for network in self.networks.values():
             for i in range(self.num_of_sides):
                 models_map[str(i)][network.type] = network.filename
