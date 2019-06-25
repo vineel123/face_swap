@@ -46,7 +46,7 @@ class ModelBase():
                  preview_scale=100,
                  input_shape=None,
                  encoder_dim=None,
-                 trainer="mul_train",
+                 trainer="mul_trainer",
                  pingpong=False,
                  memory_saving_gradients=False,
                  predict=False,
@@ -163,8 +163,7 @@ class ModelBase():
             super() this method for defaults otherwise be sure to add """
         logger.debug("Setting training data")
         # Force number of preview images to between 2 and 16
-        preview_images = self.config.get("preview_images", 14)
-        preview_images = min(max(preview_images, 2), 16)
+        preview_images = 1
         self.training_opts["preview_images"] = preview_images
         self.training_opts["training_size"] = self.state.training_size
         self.training_opts["no_logs"] = self.state.current_session["no_logs"]
@@ -295,6 +294,7 @@ class ModelBase():
         """ Compile the predictors """
         logger.debug("Compiling Predictors")
         learning_rate = self.config.get("learning_rate", 5e-5)
+        print(learning_rate)
         optimizer = self.get_optimizer(lr=learning_rate, beta_1=0.5, beta_2=0.999)
 
         for side, model in self.predictors.items():

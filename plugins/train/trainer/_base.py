@@ -373,7 +373,7 @@ class Samples():
             predictions = [preds["{}_{}".format(side, side)],
                            preds["{}_{}".format(other_side, side)]]
             display = self.to_full_frame(side, samples, predictions)
-            headers[side] = self.get_headers(side, other_side, display[0].shape[1])
+            headers[side] = self.get_headers(side, display[0].shape[1])
             figures[side] = np.stack([display[0], display[1], display[2], ], axis=1)
             if self.images[side][0].shape[0] % 2 == 1:
                 figures[side] = np.concatenate([figures[side],
@@ -513,12 +513,9 @@ class Samples():
         logger.debug("Overlayed foreground. Shape: %s", retval.shape)
         return retval
 
-    def get_headers(self, side, other_side, width):
+    def get_headers(self, side, width):
         """ Set headers for images """
-        logger.debug("side: '%s', other_side: '%s', width: %s",
-                     side, other_side, width)
         side = side.upper()
-        other_side = other_side.upper()
         height = int(64 * self.scaling)
         total_width = width * 3
         logger.debug("height: %s, total_width: %s", height, total_width)

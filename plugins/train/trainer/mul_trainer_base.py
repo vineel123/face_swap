@@ -289,7 +289,7 @@ class Batcher():
     def set_preview_feed(self):
         """ Set the preview dictionary """
         logger.debug("Setting preview feed: (side: '%s')", self.side)
-        batchsize = min(len(self.images), self.model.training_opts.get("preview_images", 14))
+        batchsize = 1
         self.preview_feed = self.load_generator().minibatch_ab(self.images,
                                                                batchsize,
                                                                self.side,
@@ -299,7 +299,7 @@ class Batcher():
 
     def compile_sample(self, batch_size, samples=None, images=None):
         """ Training samples to display in the viewer """
-        num_images = self.model.training_opts.get("preview_images", 14)
+        num_images = self.model.training_opts.get("preview_images", 1)
         num_images = min(batch_size, num_images) if batch_size is not None else num_images
         logger.debug("Compiling samples: (side: '%s', samples: %s)", self.side, num_images)
         images = images if images is not None else self.target
@@ -362,36 +362,28 @@ class Samples():
                 feeds[side] = feeds[side].reshape((-1, ) + self.model.input_shape)
             else:
                 feeds[side] = faces
-            if self.use_mask:
-                mask = samples[-1]
-                feeds[side] = [feeds[side], mask]
 
-        preds = self.get_predictions(feeds["0"], feeds["1"])
+        preds = self.get_predictions(feeds)
 
         for side, samples in self.images.items():
-            if(side == "2"):
-                break
-            other_side = "0" if side == "1" else "1"
-            predictions = [preds["{}_{}".format(side, side)],
-                           preds["{}_{}".format(other_side, side)]]
+            predictions = [preds["{}_{}".format(other_side,side)] for other_side in range(len(feeds))]
+            #print(f"------predictions len = {len(predictions)}")
             display = self.to_full_frame(side, samples, predictions)
-            headers[side] = self.get_headers(side, other_side, display[0].shape[1])
-            figures[side] = np.stack([display[0], display[1], display[2], ], axis=1)
-            if self.images[side][0].shape[0] % 2 == 1:
-                figures[side] = np.concatenate([figures[side],
-                                                np.expand_dims(figures[side][0], 0)])
+            #headers[side] = self.get_headers(side, len(feeds), display[0].shape[1])
+            #print(f"-----------display len = {len(display)}")
+            figures[side] = np.stack(display, axis=1)
+            
 
-        width = 4
-        side_cols = width // 2
-        if side_cols != 1:
-            headers = self.duplicate_headers(headers, side_cols)
+        width = len(feeds)+1
 
-        header = np.concatenate([headers["0"], headers["1"]], axis=1)
-        figure = np.concatenate([figures["0"], figures["1"]], axis=0)
-        height = int(figure.shape[0] / width)
-        figure = figure.reshape((width, height) + figure.shape[1:])
+        #header = np.concatenate([headers["0"], headers["1"]], axis=1)
+        #print(f"---------------------------------figures len = {figures['1'].shape}")
+        figure = np.concatenate([figures[key] for key in figures], axis=1)
+        #print(f"-----------------------------------{figure.shape}")
+        height = len(feeds)
+        figure = figure.reshape((height , width) + figure.shape[2:])
         figure = stack_images(figure)
-        figure = np.vstack((header, figure))
+        #figure = np.vstack((header, figure))
 
         logger.debug("Compiled sample")
         return np.clip(figure * 255, 0, 255).astype('uint8')
@@ -412,15 +404,13 @@ class Samples():
         logger.debug("Resized sample: (side: '%s' shape: %s)", side, retval.shape)
         return retval
 
-    def get_predictions(self, feed_a, feed_b):
+    def get_predictions(self, feeds):
         """ Return the sample predictions from the model """
         logger.debug("Getting Predictions")
         preds = dict()
-        preds["0_0"] = self.model.predictors["0"].predict(feed_a)
-        preds["1_0"] = self.model.predictors["1"].predict(feed_a)
-        preds["0_1"] = self.model.predictors["0"].predict(feed_b)
-        preds["1_1"] = self.model.predictors["1"].predict(feed_b)
-
+        for i in range(len(feeds)):
+            for j in range(len(feeds)):
+                preds[f"{i}_{j}"] = self.model.predictors[f"{i}"].predict(feeds[f"{j}"])
         # Get the returned image from predictors that emit multiple items
         if not isinstance(preds["0_0"], np.ndarray):
             for key, val in preds.items():
@@ -515,7 +505,7 @@ class Samples():
         logger.debug("Overlayed foreground. Shape: %s", retval.shape)
         return retval
 
-    def get_headers(self, side, other_side, width):
+    def get_headers(self, side, siz , width):
         """ Set headers for images """
         logger.debug("side: '%s', other_side: '%s', width: %s",
                      side, other_side, width)
@@ -525,9 +515,8 @@ class Samples():
         total_width = width * 3
         logger.debug("height: %s, total_width: %s", height, total_width)
         font = cv2.FONT_HERSHEY_SIMPLEX  # pylint: disable=no-member
-        texts = ["Target {}".format(side),
-                 "{} > {}".format(side, side),
-                 "{} > {}".format(side, other_side)]
+        texts = ["Target {}".format(side)]
+        texts+=["{} > {}".format(side, other_side) for other_side in range(siz)]
         text_sizes = [cv2.getTextSize(texts[idx],  # pylint: disable=no-member
                                       font,
                                       self.scaling,
@@ -593,7 +582,7 @@ class Timelapse():
         images = {"0": get_image_paths(input_a), "1": get_image_paths(input_b)}
         batchsize = min(len(images["0"]),
                         len(images["1"]),
-                        self.model.training_opts.get("preview_images", 14))
+                        self.model.training_opts.get("preview_images", 1))
         for side, image_files in images.items():
             self.batchers[side].set_timelapse_feed(image_files, batchsize)
         logger.debug("Set up timelapse")
