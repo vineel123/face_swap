@@ -294,7 +294,7 @@ class ModelBase():
         """ Compile the predictors """
         logger.debug("Compiling Predictors")
         learning_rate = self.config.get("learning_rate", 5e-5)
-        print(learning_rate)
+        learning_rate = 1e-7
         optimizer = self.get_optimizer(lr=learning_rate, beta_1=0.5, beta_2=0.999)
 
         for side, model in self.predictors.items():

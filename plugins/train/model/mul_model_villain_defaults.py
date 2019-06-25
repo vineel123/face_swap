@@ -75,7 +75,7 @@ _DEFAULTS = {
         "fixed": True,
     },
     "learning_rate": {
-        "default": 6e-6,
+        "default": 6e-3,
         "info": "How much of the extracted image to train on. Generally the model is optimized"
                 "\nto the default value. Sensible values to use are:"
                 "\n\t62.5%% spans from eyebrow to eyebrow."
@@ -84,7 +84,7 @@ _DEFAULTS = {
                 "\n\t100.0%% is a mugshot.",
         "datatype": float,
         "rounding": 1,
-        "min_max": (62.5, 100.0),
+        "min_max": (1e-8 , 1),
         "choices": [],
         "gui_radio": False,
         "fixed": True,

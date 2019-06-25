@@ -246,6 +246,7 @@ class Batcher():
         """ Train a batch """
         logger.trace("Training one step: (side: %s)", self.side)
         batch = self.get_next(do_preview)
+        print(len(batch))
         loss = self.model.predictors[self.side].train_on_batch(*batch)
         loss = loss if isinstance(loss, list) else [loss]
         return loss
@@ -412,6 +413,7 @@ class Samples():
             for j in range(len(feeds)):
                 preds[f"{i}_{j}"] = self.model.predictors[f"{i}"].predict(feeds[f"{j}"])
         # Get the returned image from predictors that emit multiple items
+        print(preds["0_0"])
         if not isinstance(preds["0_0"], np.ndarray):
             for key, val in preds.items():
                 preds[key] = val[0]
