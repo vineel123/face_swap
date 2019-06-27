@@ -5,9 +5,13 @@
 
 from keras.layers import Conv2D, Dense, Flatten, Input, Reshape
 
+from keras.losses import binary_crossentropy , mean_absolute_error
+
 from keras.models import Model as KerasModel
 
 from .mul_model_base import ModelBase, logger
+
+import tensorflow as tf 
 
 
 class Model(ModelBase):
@@ -27,6 +31,18 @@ class Model(ModelBase):
         self.discriminators = dict() # dict to store discriminators
         self.gans = dict() # dict stores gan network
 
+    def build():
+        """ Build the model. Override for custom build methods """
+        self.add_networks()
+        self.load_models(swapped=False)
+        self.build_autoencoders()
+        self.build_discriminators()
+        self.build_gans()
+        self.log_summary()
+        #self.compile_predictors(initialize=True)
+        self.compile_gans(initialize=True)
+        self.compile_discriminators()
+
     def add_discriminator(self,side,model):
         """ Add a predictor to the predictors dictionary """
         logger.debug("Adding discriminator: (side: '%s', model: %s)", side, model)
@@ -43,12 +59,12 @@ class Model(ModelBase):
             model = multi_gpu_model(model, self.gpus)
         self.gans[side] = model
 
-    def build_discriminator(self):
+    def build_discriminators(self):
         for side in range(self.num_of_sides):
             self.add_discriminator(str(side), self.networks["discriminator"].network)
         logger.debug("Initialized model")
 
-    def build_gan(self):
+    def build_gans(self):
         inputs = [Input(shape = self.input_shape , name = "face")]
         outputs_list = []
         for side in range(self.num_of_sides):
@@ -56,13 +72,57 @@ class Model(ModelBase):
             for side1 in range(self.num_of_sides):
                 if (side1 == side):
                     reconstructed_output = self.networks["decoder_{}".format(side)].network(encoded_output)
-                    outputs_list.append(reconstructed_output)
+                    outputs_list.insert(0,reconstructed_output)
                 else:
+                    self.networks[f"discriminator_{side1}"].trainable = False
                     swaped_output = self.networks[f"decoder_{side1}"].network(encoded_output)
                     discriminator_output = self.networks[f"discriminator_{side1}"].networks(swaped_output)
                     outputs_list.append(discriminator_output)
             self.add_gan(str(side) , KerasModel(inputs , outputs_list))
-        
+
+    def gan_loss_function(self,y_true,y_pred):
+        loss = mean_absolute_error(y_true , y_pred[0])
+        discriminator_true = tf.stack([tf.constant(1.0)] for i in range(len(y_pred) - 1))
+        loss += tf.math.reduce_sum(binary_crossentropy(discriminator_true , y_pred[1:]))
+        return loss
+
+    def compile_gans(self, initialize=True):
+        """ Compile the predictors """
+        logger.debug("Compiling gans")
+        learning_rate = self.config.get("learning_rate", 5e-5)
+        learning_rate = 1e-7
+        optimizer = self.get_optimizer(lr=learning_rate, beta_1=0.5, beta_2=0.999)
+
+        for side, model in self.gans.items():
+            loss_names = ["loss_gan"]
+            loss_funcs = [self.gan_loss_function]
+            model.compile(optimizer=optimizer, loss=loss_funcs)
+
+            if len(loss_names) > 1:
+                loss_names.insert(0, "total_loss")
+            if initialize:
+                self.state.add_session_loss_names(side, loss_names)
+                self.history[f"gan_{side}"] = list()
+        logger.debug("Compiled gans. Losses: %s", loss_names)
+
+    def compile_discriminators(self, initialize = True):
+        """ Compile the predictors """
+        logger.debug("Compiling discriminators")
+        learning_rate = self.config.get("learning_rate", 5e-5)
+        optimizer = self.get_optimizer(lr=learning_rate, beta_1=0.5, beta_2=0.999)
+
+        for side, model in self.discriminators.items():
+            loss_names = ["loss_discriminator"]
+            loss_funcs = [self.gan_loss_function]
+            model.trainable = True
+            model.compile(optimizer=optimizer, loss=loss_funcs)
+
+            if len(loss_names) > 1:
+                loss_names.insert(0, "total_loss")
+            if initialize:
+                self.state.add_session_loss_names(side, loss_names)
+                self.history[f"discriminator_{side}"] = list()
+        logger.debug("Compiled gans. Losses: %s", loss_names)
 
     def add_networks(self):
         """ Add the original model weights """
