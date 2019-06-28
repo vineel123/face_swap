@@ -60,14 +60,8 @@ class TrainerBase():
                                        batch_size)
                          for side in self.sides}
 
-        self.discriminator_batchers = {side: DiscriminatorBatcher(self.model,
-                                       side,
-                                       images[side],
-                                       self.model,
-                                       self.use_mask,
-                                       batch_size)
-                         for side in self.sides}
-
+        self.discriminator_batchers = dict()
+        self.set_discriminator_batchers()
         self.tensorboard = self.set_tensorboard()
         self.samples = Samples(self.model,
                                self.use_mask,
@@ -83,6 +77,16 @@ class TrainerBase():
     def timestamp(self):
         """ Standardised timestamp for loss reporting """
         return time.strftime("%H:%M:%S")
+
+    def set_discriminator_batchers(self):
+        self.discriminator_batchers = {side: DiscriminatorBatcher(
+                                       side,
+                                       self.images[side],
+                                       self.model,
+                                       self.use_mask,
+                                       self.batch_size)
+                                       for side in self.sides}
+
 
     @property
     def landmarks_required(self):
@@ -202,8 +206,27 @@ class TrainerBase():
         logger.trace("Training one step : (iterations: %s)" , self.model.iterations)
         loss = dict()
         #training discriminators
-        for side , batcher in self.discriminator_batchers.items():
-            loss[f"discriminator_{side}"] = batcher.train_one_batch()
+        
+        
+
+        self.model.state.increment_iterations()
+        print("loss")
+
+        for side, side_loss in loss.items():
+            self.store_history(side, side_loss)
+            self.log_tensorboard(side, side_loss)
+
+        if not self.pingpong.active:
+            self.print_loss(loss)
+        else:
+            for key, val in loss.items():
+                self.pingpong.loss[key] = val
+            self.print_loss(self.pingpong.loss)
+
+        if do_preview:
+            samples = self.samples.show_sample()
+            if samples is not None:
+                viewer(samples, "Training - 'S': Save Now. 'ENTER': Save and Quit")
 
 
 
@@ -360,23 +383,23 @@ class DiscriminatorBatcher(Batcher):
         input_size = self.model.input_shape[0]
         output_size = self.model.output_shape[0]
         logger.debug("input_size: %s, output_size: %s", input_size, output_size)
-        generator = DiscriminatorBatcher(self.model,input_size, output_size, self.model.training_opts)
+        generator = DiscriminatorDataGenerator(self.model,input_size, output_size, self.model.training_opts)
         return generator
 
-    def get_next(self, do_preview):
+    def get_next(self):
         """ Return the next batch from the generator
             Items should come out as: (warped, target [, mask]) """
         batch = next(self.feed)
         return batch
 
-    def train_one_batch(self, do_preview):
+    def train_one_batch(self):
         """ Train a batch """
         logger.trace("Training one step: (side: %s)", self.side)
-        batch = self.get_next(do_preview)
-        print(len(batch))
+        batch = self.get_next()
         loss = self.model.discriminators[self.side].train_on_batch(*batch)
         loss = loss if isinstance(loss, list) else [loss]
         return loss
+
 class Samples():
     """ Display samples for preview and timelapse """
     def __init__(self, model, use_mask, coverage_ratio, scaling=1.0):
@@ -703,3 +726,14 @@ class Landmarks():
                 detected_face.load_aligned(None, size=self.size, align_eyes=False)
                 landmarks[detected_face.hash] = detected_face.aligned_landmarks
         return landmarks
+
+
+
+class Single_Discriminator_trainer(TrainerBase):
+    def set_discriminator_batchers(self):
+        self.discriminator_batchers = {"single":DiscriminatorBatcher(
+                                       side,
+                                       images[side],
+                                       self.model,
+                                       self.use_mask,
+                                       batch_size)}

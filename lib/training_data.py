@@ -2,13 +2,9 @@
 """ Process training data for model training """
 
 import logging
-from random import random
+
 from hashlib import sha1
-
-
 from random import random, shuffle, choice
-import tensorflow as tf
-
 
 import cv2
 import numpy as np
@@ -214,50 +210,6 @@ class TrainingDataGenerator():
         dst_points = landmarks[choice(closest_hashes)]
         logger.trace("Returning: (dst_points: %s)", dst_points)
         return dst_points
-
-
-class DiscriminatorDataGenerator(TrainingDataGenerator):
-
-    def __init__(self,model, model_input_size, model_output_size, training_opts):
-        self.model = model
-        super().__init__(model_input_size, model_output_size, training_opts)
-
-    def load_batches(self, mem_gen, images, side, is_display,
-                     do_shuffle=True, batchsize=0):
-        """ Load the warped images and target images to queue """
-        logger.debug("Loading batch: (image_count: %s, side: '%s', is_display: %s, "
-                     "do_shuffle: %s)", len(images), side, is_display, do_shuffle)
-        self.validate_samples(images)
-        # Intialize this for each subprocess
-        self._nearest_landmarks = dict()
-
-        def _img_iter(imgs):
-            while True:
-                if do_shuffle:
-                    shuffle(imgs)
-                for img in imgs:
-                    yield img
-
-        img_iter = _img_iter(images)
-        epoch = 0
-        for memory_wrapper in mem_gen:
-            memory = memory_wrapper.get()
-            logger.trace("Putting to batch queue: (side: '%s', is_display: %s)",
-                         side, is_display)
-            for i, img_path in enumerate(img_iter):
-                imgs = self.process_face(img_path, side, is_display)
-                if(random() > 0.5):
-                    memory[0][i][:] = img[2]
-                    memory[1][i][:] = tf.constant([0.0])
-                else:
-                    memory[0][i][:] = self.model.predictors[side].predict(img[2])
-                    memory[1][i][:] = tf.constant([1.0])
-                epoch += 1
-                if i == batchsize - 1:
-                    break
-            memory_wrapper.ready()
-        logger.debug("Finished discriminator batching: (epoch: %s, side: '%s', is_display: %s)",
-                     epoch, side, is_display)
 
 
 class ImageManipulation():
@@ -500,10 +452,6 @@ class ImageManipulation():
         logger.trace("Target mask shape: %s", target_mask.shape)
         logger.trace("Randomly warped image and mask")
         return [warped_image, target_image, target_mask]
-
-
-
-
 
 
 def stack_images(images):
