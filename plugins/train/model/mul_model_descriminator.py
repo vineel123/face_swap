@@ -2,7 +2,7 @@
 """ Original Model
     Based on the original https://www.reddit.com/r/deepfakes/
     code sample + contribs """
-
+from keras.initializers import RandomNormal
 from keras.layers import Conv2D, Dense, Flatten, Input, Reshape
 
 from keras.losses import binary_crossentropy , mean_absolute_error
@@ -30,6 +30,8 @@ class Model(ModelBase):
         self.gans = dict() # dict stores gan network
         super().__init__(*args, **kwargs)
         self.trainer = "mul_model_descriminator_trainer"
+
+        
         
 
     #not compiling predictors
@@ -81,12 +83,12 @@ class Model(ModelBase):
         logger.debug("Adding networks")
         #adding decoders
         for i in range(self.num_of_sides):
-            self.add_network("decoder", str(i), self.decoder())
+            self.add_network("decoder", str(i), self.decoder(i))
         #adding encoder
         self.add_network("encoder", None, self.encoder())
         #adding discriminator
         for i in range(self.num_of_sides):
-            self.add_network("discriminator", str(i) , self.discriminator())
+            self.add_network("discriminator", str(i) , self.discriminator(i))
         logger.debug("Added networks")
 
     def add_discriminator(self,side,model):
@@ -180,43 +182,57 @@ class Model(ModelBase):
 
     def encoder(self):
         """ Encoder Network """
+        kwargs = dict(kernel_initializer=self.kernel_initializer)
         input_ = Input(shape=self.input_shape)
-        var_x = input_
-        var_x = self.blocks.conv(var_x, 128)
-        var_x = self.blocks.conv(var_x, 256)
-        var_x = self.blocks.conv(var_x, 512)
-        if not self.config.get("lowmem", False):
-            var_x = self.blocks.conv(var_x, 1024)
-        var_x = Dense(self.encoder_dim)(Flatten()(var_x))
-        var_x = Dense(4 * 4 * 1024)(var_x)
-        var_x = Reshape((4, 4, 1024))(var_x)
-        var_x = self.blocks.upscale(var_x, 512)
+        in_conv_filters = self.input_shape[0]
+        if self.input_shape[0] > 128:
+            in_conv_filters = 128 + (self.input_shape[0] - 128) // 4
+        dense_shape = self.input_shape[0] // 16
+
+        var_x = self.blocks.conv(input_, in_conv_filters, res_block_follows=True, **kwargs)
+        tmp_x = var_x
+        res_cycles = 4
+        for _ in range(res_cycles):
+            nn_x = self.blocks.res_block(var_x, 128, **kwargs)
+            var_x = nn_x
+        # consider adding scale before this layer to scale the residual chain
+        var_x = add([var_x, tmp_x])
+        var_x = self.blocks.conv(var_x, 128, **kwargs)
+        var_x = PixelShuffler()(var_x)
+        var_x = self.blocks.conv(var_x, 128, **kwargs)
+        var_x = PixelShuffler()(var_x)
+        var_x = self.blocks.conv(var_x, 128, **kwargs)
+        var_x = self.blocks.conv_sep(var_x, 256, **kwargs)
+        var_x = self.blocks.conv(var_x, 512, **kwargs)
+
+        var_x = Dense(self.encoder_dim, **kwargs)(Flatten()(var_x))
+        var_x = Dense(dense_shape * dense_shape * 1024, **kwargs)(var_x)
+        var_x = Reshape((dense_shape, dense_shape, 1024))(var_x)
+        var_x = self.blocks.upscale(var_x, 512, **kwargs)
         return KerasModel(input_, var_x)
 
-    def discriminator(self):
+    def discriminator(self,side=""):
         """ Descriminator Network """
         input_ = Input(shape = self.input_shape , name = "discriminator_input" )
         varx = input_
         varx = self.blocks.conv(varx , 128)
         varx = self.blocks.conv(varx , 256)
+        varx = self.blocks.conv(varx , 512)
         varx = Dense(1)(Flatten()(varx))
-        return KerasModel(input_ , varx)
+        return KerasModel(input_ , varx , name = f"discriminator_{side}")
 
-    def decoder(self):
-        """ Decoder Network """
-        input_ = Input(shape=(8, 8, 512))
+    def decoder(self,side=""):
+        kwargs = dict(kernel_initializer=self.kernel_initializer)
+        decoder_shape = self.input_shape[0] // 8
+        input_ = Input(shape=(decoder_shape, decoder_shape, 512))
+
         var_x = input_
-        var_x = self.blocks.upscale(var_x, 256)
-        var_x = self.blocks.upscale(var_x, 128)
-        var_x = self.blocks.upscale(var_x, 64)
-        var_x = Conv2D(3, kernel_size=5, padding="same", activation="sigmoid")(var_x)
+        var_x = self.blocks.upscale(var_x, 512, res_block_follows=True, **kwargs)
+        var_x = self.blocks.res_block(var_x, 512, **kwargs)
+        var_x = self.blocks.upscale(var_x, 256, res_block_follows=True, **kwargs)
+        var_x = self.blocks.res_block(var_x, 256, **kwargs)
+        var_x = self.blocks.upscale(var_x, self.input_shape[0], res_block_follows=True, **kwargs)
+        var_x = self.blocks.res_block(var_x, self.input_shape[0], **kwargs)
+        var_x = Conv2D(3, kernel_size=5, padding='same', activation='sigmoid')(var_x)
         outputs = [var_x]
-
-        if self.config.get("mask_type", None):
-            var_y = input_
-            var_y = self.blocks.upscale(var_y, 256)
-            var_y = self.blocks.upscale(var_y, 128)
-            var_y = self.blocks.upscale(var_y, 64)
-            var_y = Conv2D(1, kernel_size=5, padding='same', activation='sigmoid')(var_y)
-            outputs.append(var_y)
         return KerasModel(input_, outputs=outputs)

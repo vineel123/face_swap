@@ -169,8 +169,8 @@ class TrainerBase():
         logger.trace(loss)
         output = list()
         for side in sorted(list(loss.keys())):
-            display = ", ".join(["{}_{}: {:.5f}".format(self.model.state.loss_names[side][idx],
-                                                        side.capitalize(),
+            display = ", ".join(["{}_{}: {:.5f}".format(
+                                                        side[0],side[-1],
                                                         this_loss)
                                  for idx, this_loss in enumerate(loss[side])])
             output.append(display)
@@ -181,50 +181,26 @@ class TrainerBase():
         """ Train a batch """
         logger.trace("Training one step: (iteration: %s)", self.model.iterations)
         do_preview = viewer is not None
-        """do_timelapse = timelapse_kwargs is not None
-        loss = dict()
-        for side, batcher in self.batchers.items():
-            if self.pingpong.active and side != self.pingpong.side:
-                continue
-            loss[side] = batcher.train_one_batch(do_preview)
-            if not do_preview and not do_timelapse:
-                continue
-            if do_preview:
-                self.samples.images[side] = batcher.compile_sample(None)
-            if do_timelapse:
-                self.timelapse.get_sample(side, timelapse_kwargs)
 
-        self.model.state.increment_iterations()
-
-        for side, side_loss in loss.items():
-            self.store_history(side, side_loss)
-            self.log_tensorboard(side, side_loss)
-
-        if not self.pingpong.active:
-            self.print_loss(loss)
-        else:
-            for key, val in loss.items():
-                self.pingpong.loss[key] = val
-            self.print_loss(self.pingpong.loss)
-
-        if do_preview:
-            samples = self.samples.show_sample()
-            if samples is not None:
-                viewer(samples, "Training - 'S': Save Now. 'ENTER': Save and Quit")
-
-        if do_timelapse:
-            self.timelapse.output_timelapse()"""
         logger.trace("Training one step : (iterations: %s)" , self.model.iterations)
         loss = dict()
+        
+        self.model.unfreezeDiscriminators()
         #training discriminators
-        # for side , batcher in self.discriminator_batchers.items():
-        #     loss[f"discriminator_{side}"] = batcher.train_one_batch()
+        for side , batcher in self.discriminator_batchers.items():
+            loss[f"discriminator_{side}"] = batcher.train_one_batch()
+        
+        self.model.freezeDiscriminators()
+        #training gan
         for side , batcher in self.batchers.items():
             loss[f"gan_{side}"] = batcher.train_one_batch(do_preview)
+            if do_preview:
+                self.samples.images[side] = batcher.compile_sample(None)
 
         for side, side_loss in loss.items():
             self.store_history(side, side_loss)
             self.log_tensorboard(side, side_loss)
+            
         self.print_loss(loss)
         self.model.state.increment_iterations()
 
@@ -445,6 +421,7 @@ class Samples():
         figures = dict()
         headers = dict()
         for side, samples in self.images.items():
+            side = side[-1]
             faces = samples[1]
             if self.model.input_shape[0] / faces.shape[1] != 1.0:
                 feeds[side] = self.resize_sample(side, faces, self.model.input_shape[0])
@@ -455,7 +432,7 @@ class Samples():
         preds = self.get_predictions(feeds)
 
         for side, samples in self.images.items():
-            predictions = [preds["{}_{}".format(other_side,side)] for other_side in range(len(feeds))]
+            predictions = [preds["{}_{}".format(other_side,side[-1])] for other_side in range(len(feeds))]
             #print(f"------predictions len = {len(predictions)}")
             display = self.to_full_frame(side, samples, predictions)
             #headers[side] = self.get_headers(side, len(feeds), display[0].shape[1])
@@ -501,7 +478,6 @@ class Samples():
             for j in range(len(feeds)):
                 preds[f"{i}_{j}"] = self.model.predictors[f"{i}"].predict(feeds[f"{j}"])
         # Get the returned image from predictors that emit multiple items
-        print(preds["0_0"])
         if not isinstance(preds["0_0"], np.ndarray):
             for key, val in preds.items():
                 preds[key] = val[0]

@@ -4,6 +4,7 @@
     When inheriting model_data should be a list of NNMeta objects.
     See the class for details.
 """
+from keras.initializers import RandomNormal
 import logging
 import os
 import sys
@@ -98,6 +99,7 @@ class ModelBase():
                               "pingpong": pingpong}
 
         self.set_gradient_type(memory_saving_gradients)
+        self.kernel_initializer = RandomNormal(0, 0.02)
         self.build()
         self.set_training_data()
         logger.debug("Initialized ModelBase (%s)", self.__class__.__name__)
@@ -636,7 +638,7 @@ class NNMeta():
             return False
         self.config = network.get_config()
         self.network = network  # Update network with saved model
-        self.network.name = self.type
+        self.network.name = self.name
         return True
 
     def save(self, fullpath=None, should_backup=False):
@@ -663,7 +665,7 @@ class NNMeta():
         logger.info("Adding model topology to legacy weights file: '%s'", self.filename)
         self.network.load_weights(self.filename)
         self.save(should_backup=False)
-        self.network.name = self.type
+        self.network.name = self.name
 
 
 class State():
