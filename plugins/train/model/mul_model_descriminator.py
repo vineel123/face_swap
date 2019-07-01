@@ -30,21 +30,51 @@ class Model(ModelBase):
         self.gans = dict() # dict stores gan network
         super().__init__(*args, **kwargs)
         self.trainer = "mul_model_descriminator_trainer"
-        print(self.trainer)
-        self.build()
+        
 
-    def build(self)::
+    #not compiling predictors
+    def build(self):
+        """ Build the model. Override for custom build methods """
         self.add_networks()
+        #self.print_networks("discriminator")
         self.load_models(swapped=False)
         self.build_autoencoders()
         self.build_discriminators()
         self.build_gans()
+        #self.unfreezeDiscriminators()
         self.log_summary()
         #self.compile_predictors(initialize=True)
         self.compile_gans(initialize=True)
+        #self.print_gan()
         self.compile_discriminators()
 
-    
+    def print_networks(self,model):
+        for i in range(self.num_of_sides):
+            print(self.networks[f"{model}_{i}"].network.summary())
+
+    def print_gan(self):
+        for gan in self.gans:
+            print(self.gans[gan].summary())
+
+    def print_discriminators(self):
+        for i in self.discriminators:
+            print(self.discriminators[i].summary())
+
+    def freezeModel(self,model):
+        for layer in model.layers:
+            layer.trainable = False
+
+    def unfreezeModel(self,model):
+        for layer in model.layers:
+            layer.trainable = True
+
+    def freezeDiscriminators(self):
+        for i in self.discriminators:
+            self.freezeModel(self.discriminators[i])
+
+    def unfreezeDiscriminators(self):
+        for i in self.discriminators:
+            self.unfreezeModel(self.discriminators[i])
 
     def add_networks(self):
         """ Add the original model weights """
@@ -77,46 +107,40 @@ class Model(ModelBase):
 
     def build_discriminators(self):
         for side in range(self.num_of_sides):
-            self.add_discriminator(str(side), self.networks["discriminator"].network)
-        logger.debug("Initialized model")
+            self.add_discriminator(str(side), self.networks[f"discriminator_{side}"].network)
+        logger.debug("Discriminator model")
 
     def build_gans(self):
         inputs = [Input(shape = self.input_shape , name = "face")]
-        outputs_list = []
         for side in range(self.num_of_sides):
+            outputs_list = []
             encoded_output = self.networks["encoder"].network(inputs[0])
             for side1 in range(self.num_of_sides):
                 if (side1 == side):
                     reconstructed_output = self.networks["decoder_{}".format(side)].network(encoded_output)
                     outputs_list.insert(0,reconstructed_output)
                 else:
-                    self.networks[f"discriminator_{side1}"].trainable = False
                     swaped_output = self.networks[f"decoder_{side1}"].network(encoded_output)
-                    discriminator_output = self.networks[f"discriminator_{side1}"].networks(swaped_output)
+                    discriminator_output = self.networks[f"discriminator_{side1}"].network(swaped_output)
                     outputs_list.append(discriminator_output)
-            self.add_gan(str(side) , KerasModel(inputs , outputs_list))
-
-    def gan_loss_function(self,y_true,y_pred):
-        loss = mean_absolute_error(y_true , y_pred[0])
-        for i in range(1,len(y_pred)):
-            loss += binary_crossentropy(tf.zeros(y_pred[i].shape) , y_pred[i])
-        return loss
+            self.add_gan(str(side) , KerasModel(inputs , outputs_list , name = "gan") )
 
     def compile_gans(self, initialize=True):
         """ Compile the predictors """
         logger.debug("Compiling gans")
         learning_rate = self.config.get("learning_rate", 5e-5)
-        learning_rate = 1e-7
         optimizer = self.get_optimizer(lr=learning_rate, beta_1=0.5, beta_2=0.999)
 
         for side, model in self.gans.items():
-            loss_names = ["loss_gan"]
-            loss_funcs = [self.gan_loss_function]
-            model.compile(optimizer=optimizer, loss=loss_funcs)
+            loss_names = ["total_loss"]
+            loss_func = [self.loss_function(None , side , initialize)]
+            for i in range(1,self.num_of_sides):
+                loss_func.append(binary_crossentropy)
+            model.compile(optimizer=optimizer, loss=loss_func)
             if len(loss_names) > 1:
                 loss_names.insert(0, "total_loss")
             if initialize:
-                self.state.add_session_loss_names(side, loss_names)
+                self.state.add_session_loss_names(f"gan_{side}", loss_names)
                 self.history[f"gan_{side}"] = list()
         logger.debug("Compiled gans. Losses: %s", loss_names)
 
@@ -128,14 +152,13 @@ class Model(ModelBase):
 
         for side, model in self.discriminators.items():
             loss_names = ["loss_discriminator"]
-            loss_funcs = [self.gan_loss_function]
             model.trainable = True
-            model.compile(optimizer=optimizer, loss=loss_funcs)
+            model.compile(optimizer=optimizer , loss = binary_crossentropy)
 
             if len(loss_names) > 1:
                 loss_names.insert(0, "total_loss")
             if initialize:
-                self.state.add_session_loss_names(side, loss_names)
+                self.state.add_session_loss_names(f"discriminator_{side}", loss_names)
                 self.history[f"discriminator_{side}"] = list()
         logger.debug("Compiled gans. Losses: %s", loss_names)
 
@@ -162,6 +185,8 @@ class Model(ModelBase):
         var_x = self.blocks.conv(var_x, 128)
         var_x = self.blocks.conv(var_x, 256)
         var_x = self.blocks.conv(var_x, 512)
+        if not self.config.get("lowmem", False):
+            var_x = self.blocks.conv(var_x, 1024)
         var_x = Dense(self.encoder_dim)(Flatten()(var_x))
         var_x = Dense(4 * 4 * 1024)(var_x)
         var_x = Reshape((4, 4, 1024))(var_x)
@@ -170,11 +195,12 @@ class Model(ModelBase):
 
     def discriminator(self):
         """ Descriminator Network """
-        input_ = Input(shape = self.output_shape)
-        var_x = input_
-        varx = self.blocks.conv(var_x , 128)
-        varx = Desnse(1)(Flatten()(var_x))
-        return KerasModel(input_ , var_x)
+        input_ = Input(shape = self.input_shape , name = "discriminator_input" )
+        varx = input_
+        varx = self.blocks.conv(varx , 128)
+        varx = self.blocks.conv(varx , 256)
+        varx = Dense(1)(Flatten()(varx))
+        return KerasModel(input_ , varx)
 
     def decoder(self):
         """ Decoder Network """

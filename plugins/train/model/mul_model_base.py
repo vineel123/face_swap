@@ -72,7 +72,7 @@ class ModelBase():
         self.input_shape = input_shape
         self.output_shape = None  # set after model is compiled
         self.encoder_dim = encoder_dim
-        self.trainer = trainer
+        #self.trainer = trainer
 
         self.state = State(self.model_dir,
                            self.name,

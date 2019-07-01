@@ -31,7 +31,7 @@ import tensorflow as tf
 
 from lib.alignments import Alignments
 from lib.faces_detect import DetectedFace
-from lib.training_data import TrainingDataGenerator, stack_images , DiscriminatorDataGenerator
+from lib.training_data import TrainingDataGenerator, stack_images 
 from lib.utils import get_folder, get_image_paths
 import random
 
@@ -57,7 +57,8 @@ class TrainerBase():
                                        images[side],
                                        self.model,
                                        self.use_mask,
-                                       batch_size)
+                                       batch_size , 
+                                       sides = self.sides)
                          for side in self.sides}
 
         self.discriminator_batchers = dict()
@@ -126,16 +127,26 @@ class TrainerBase():
 
         logger.debug("Enabling TensorBoard Logging")
         tensorboard = dict()
-
         for side in self.sides:
-            logger.debug("Setting up TensorBoard Logging. Side: %s", side)
+            logger.debug("Setting up TensorBoard Logging. Side: %s", f"discriminator_{side}")
             log_dir = os.path.join(str(self.model.model_dir),
                                    "{}_logs".format(self.model.name),
-                                   side,
+                                   f"discriminator_{side}",
                                    "session_{}".format(self.model.state.session_id))
             tbs = tf.keras.callbacks.TensorBoard(log_dir=log_dir, **self.tensorboard_kwargs)
-            tbs.set_model(self.model.predictors[side])
-            tensorboard[side] = tbs
+            tbs.set_model(self.model.discriminators[side])
+            tensorboard[f"discriminator_{side}"] = tbs
+
+        for side in self.sides:
+            logger.debug("Setting up TensorBoard Logging. Side: %s", f"gan_{side}")
+            log_dir = os.path.join(str(self.model.model_dir),
+                                   "{}_logs".format(self.model.name),
+                                   f"gan_{side}",
+                                   "session_{}".format(self.model.state.session_id))
+            tbs = tf.keras.callbacks.TensorBoard(log_dir=log_dir, **self.tensorboard_kwargs)
+            tbs.set_model(self.model.gans[side])
+            tensorboard[f"gan_{side}"] = tbs        
+
         logger.info("Enabled TensorBoard Logging")
         return tensorboard
 
@@ -168,9 +179,9 @@ class TrainerBase():
 
     def train_one_step(self, viewer, timelapse_kwargs):
         """ Train a batch """
-        """logger.trace("Training one step: (iteration: %s)", self.model.iterations)
+        logger.trace("Training one step: (iteration: %s)", self.model.iterations)
         do_preview = viewer is not None
-        do_timelapse = timelapse_kwargs is not None
+        """do_timelapse = timelapse_kwargs is not None
         loss = dict()
         for side, batcher in self.batchers.items():
             if self.pingpong.active and side != self.pingpong.side:
@@ -206,22 +217,16 @@ class TrainerBase():
         logger.trace("Training one step : (iterations: %s)" , self.model.iterations)
         loss = dict()
         #training discriminators
-        
-        
-
-        self.model.state.increment_iterations()
-        print("loss")
+        # for side , batcher in self.discriminator_batchers.items():
+        #     loss[f"discriminator_{side}"] = batcher.train_one_batch()
+        for side , batcher in self.batchers.items():
+            loss[f"gan_{side}"] = batcher.train_one_batch(do_preview)
 
         for side, side_loss in loss.items():
             self.store_history(side, side_loss)
             self.log_tensorboard(side, side_loss)
-
-        if not self.pingpong.active:
-            self.print_loss(loss)
-        else:
-            for key, val in loss.items():
-                self.pingpong.loss[key] = val
-            self.print_loss(self.pingpong.loss)
+        self.print_loss(loss)
+        self.model.state.increment_iterations()
 
         if do_preview:
             samples = self.samples.show_sample()
@@ -230,10 +235,14 @@ class TrainerBase():
 
 
 
+
     def store_history(self, side, loss):
         """ Store the history of this step """
         logger.trace("Updating loss history: '%s'", side)
-        self.model.history[side].append(loss[0])  # Either only loss or total loss
+        if isinstance(loss, list):
+            self.model.history[side].append(loss[0])
+        else:
+            self.model.history[side].append(loss)
         logger.trace("Updated loss history: '%s'", side)
 
     def log_tensorboard(self, side, loss):
@@ -257,7 +266,7 @@ class TrainerBase():
 
 class Batcher():
     """ Batch images from a single side """
-    def __init__(self, side, images, model, use_mask, batch_size):
+    def __init__(self, side, images, model, use_mask, batch_size , sides=None):
         logger.debug("Initializing %s: side: '%s', num_images: %s, batch_size: %s)",
                      self.__class__.__name__, side, len(images), batch_size)
         self.model = model
@@ -267,6 +276,7 @@ class Batcher():
         self.target = None
         self.samples = None
         self.mask = None
+        self.sides = sides
 
         self.feed = self.load_generator().minibatch_ab(images, batch_size, self.side)
         self.preview_feed = None
@@ -285,9 +295,12 @@ class Batcher():
         """ Train a batch """
         logger.trace("Training one step: (side: %s)", self.side)
         batch = self.get_next(do_preview)
-        print(len(batch))
-        loss = self.model.predictors[self.side].train_on_batch(*batch)
-        loss = loss if isinstance(loss, list) else [loss]
+        warped_images = batch[0]
+        ones_target = tf.ones((warped_images.shape[0],1))
+        target_output = [batch[1]]+[ones_target for i in range(len(self.sides)-1)]
+
+        loss = self.model.gans[self.side].train_on_batch(warped_images , target_output)
+        loss = [loss[0]] if isinstance(loss, list) else [loss]
         return loss
 
     def get_next(self, do_preview):
@@ -383,7 +396,7 @@ class DiscriminatorBatcher(Batcher):
         input_size = self.model.input_shape[0]
         output_size = self.model.output_shape[0]
         logger.debug("input_size: %s, output_size: %s", input_size, output_size)
-        generator = DiscriminatorDataGenerator(self.model,input_size, output_size, self.model.training_opts)
+        generator = TrainingDataGenerator(input_size, output_size, self.model.training_opts)
         return generator
 
     def get_next(self):
@@ -396,7 +409,17 @@ class DiscriminatorBatcher(Batcher):
         """ Train a batch """
         logger.trace("Training one step: (side: %s)", self.side)
         batch = self.get_next()
-        loss = self.model.discriminators[self.side].train_on_batch(*batch)
+
+        batch_input1 = batch[2]
+        batch_input2 = self.model.predictors[self.side].predict(batch[1])
+        batch_input = tf.concat([batch_input1 , batch_input2 ] , 0)
+        # print(f"real_batch shape : {batch_input1.shape}")
+        # print(f"generated_batch shape : {batch_input2.shape}")
+        batch_target1 = tf.ones((batch_input1.shape[0],1))
+        batch_target2 = tf.zeros((batch_input2.shape[0],1))
+        batch_target = tf.concat([batch_target1,batch_target2] , 0)
+        
+        loss = self.model.discriminators[self.side].train_on_batch(batch_input , batch_target)
         loss = loss if isinstance(loss, list) else [loss]
         return loss
 

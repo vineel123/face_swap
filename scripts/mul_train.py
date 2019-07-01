@@ -193,6 +193,7 @@ class Mul_Train():
     def load_trainer(self, model):
         """ Load the trainer requested for training """
         logger.debug("Loading Trainer")
+        print(model.trainer)
         trainer = PluginLoader.get_trainer(model.trainer)
         trainer = trainer(model,
                           self.images,
